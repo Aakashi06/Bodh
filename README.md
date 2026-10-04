@@ -1,122 +1,78 @@
 # Bodh
 
-### Multilingual Voice AI for Learning
+<p align="center">
+  <strong>Multilingual Voice AI for Learning</strong><br/>
+  <sub>Speak naturally. Ask anything. Learn through conversation.</sub>
+</p>
 
-**Bodh** is a voice-first AI learning companion that helps students learn through natural, multilingual conversations.
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=react,typescript,javascript,css,git,github" />
+</p>
 
-Users can **speak questions in their preferred language** and receive intelligent, spoken explanations — making learning more natural, accessible, and conversational.
+<p align="center">
+  <img src="https://img.shields.io/badge/Sarvam%20API-000000?style=flat-square" />
+  <img src="https://img.shields.io/badge/Voice%20AI-000000?style=flat-square" />
+  <img src="https://img.shields.io/badge/Multilingual-000000?style=flat-square" />
+</p>
 
-> **Speak. Ask. Understand. Learn.**
+## About
 
----
+**Bodh** is a multilingual voice AI learning companion that helps people learn through natural conversations.
 
-## ✦ What is Bodh?
+Ask a question in **English, Hindi, Hinglish, or supported Indian languages**. Bodh listens, understands the question, and responds naturally through voice.
 
-Bodh combines **speech recognition, multilingual AI, and text-to-speech** into a single voice learning experience.
+## Architecture
 
-It is designed for learners who want to interact with AI naturally instead of typing prompts into a traditional chatbot.
+<p align="center">
+  <img src="./docs/architecture.png" alt="Bodh Architecture" width="850"/>
+</p>
 
-**Core experience:**
+## What it does
 
-`Voice → Speech-to-Text → AI → Text-to-Speech → Voice`
+| Feature           | Description                                               |
+| ----------------- | --------------------------------------------------------- |
+| 🎙️ Voice-first   | Ask questions naturally using your voice                  |
+| 🌐 Multilingual   | Understands multiple Indian languages and Hinglish        |
+| 🧠 AI Tutor       | Explains concepts clearly and conversationally            |
+| 🔊 Voice Response | Responds back through natural speech                      |
+| 🇮🇳 India-first  | Built around how people in India actually speak and learn |
 
-**[Architecture diagram goes here]**
+## Tech Stack
 
----
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=react,typescript,javascript,css,git,github" />
+</p>
 
-## ✦ Key Features
+**AI & Voice:** Sarvam API · Speech-to-Text · LLM · Text-to-Speech
+**Frontend:** React · TypeScript · JavaScript · CSS
+**Integration:** REST APIs
 
-| Feature                | Description                                                        |
-| ---------------------- | ------------------------------------------------------------------ |
-| 🎙️ **Voice-first**    | Ask questions naturally using your voice                           |
-| 🌐 **Multilingual**    | Designed for English, Hindi, Hinglish & supported Indian languages |
-| 🧠 **AI Tutor**        | Generates contextual, conversational explanations                  |
-| 🔊 **Voice Responses** | Answers are converted back into natural speech                     |
-| 💬 **Conversational**  | Designed for natural back-and-forth learning                       |
-| 🇮🇳 **India-first**   | Built with Indian-language voice interaction in mind               |
-
----
-
-## ✦ Technology
-
-| Layer             | Technology                    |
-| ----------------- | ----------------------------- |
-| **AI & Voice**    | Sarvam AI                     |
-| **Frontend**      | React, TypeScript, JavaScript |
-| **Styling**       | CSS                           |
-| **Communication** | REST APIs                     |
-| **Development**   | Git, GitHub                   |
-
-### Powered by Sarvam AI
-
-Bodh uses **Sarvam AI** for its multilingual AI and voice pipeline, enabling the product to focus on Indian-language and multilingual conversational experiences.
-
----
-
-## ✦ How It Works
+## Voice Pipeline
 
 ```text
-User speaks
-     ↓
+🎙️ Voice Input
+      ↓
 Speech-to-Text
-     ↓
-Sarvam AI
-     ↓
-AI-generated response
-     ↓
+      ↓
+Sarvam API
+      ↓
 Text-to-Speech
-     ↓
-User hears the answer
+      ↓
+🔊 Voice Response
 ```
 
----
+## Example Conversations
 
-## ✦ Example
-
-**User 🎙️**
-
-> "Photosynthesis kya hota hai? Simple language mein samjhao."
-
-**Bodh 🔊**
-
-> Explains the concept conversationally and responds through voice.
-
-The same experience can be used across supported languages.
-
----
-
-## ✦ Vision
-
-Bodh aims to make AI-powered learning feel less like **using a chatbot** and more like **talking to a knowledgeable mentor**.
-
-The long-term direction is a multilingual, voice-native learning experience built for the way people naturally communicate.
-
----
-
-## ✦ Status
-
-**MVP / Prototype**
-
-The core multilingual voice interaction loop is functional and powered by Sarvam AI.
-
----
-
-## ✦ Roadmap
-
-* [x] Voice interaction
-* [x] Multilingual AI
-* [x] Speech-to-Text
-* [x] Text-to-Speech
-* [x] Conversational learning
-* [ ] Better turn-taking & interruption handling
-* [ ] Personalised learning
-* [ ] Learning context & memory
-* [ ] Expanded Indian-language support
-
----
+| User                                                                                         | Bodh adapts by                                            |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| **“मुझे न्यूटन के लॉ समझाओ, with the daily life examples that I see every day in my life.”** | Explaining Newton's laws using familiar everyday examples |
+| **“Photosynthesis kya hota hai? Class 7 ke level pe simple samjhao.”**                       | Giving a simple Hinglish explanation                      |
+| **“Why does the sky look blue? Explain it like I'm 12.”**                                    | Adjusting the explanation to the learner's level          |
+| **“Mujhe gravity samjhao, but formula mat use karna.”**                                      | Explaining the concept without using formulas             |
+| **“Explain the water cycle in Hindi, but keep the scientific terms in English.”**            | Mixing Hindi with relevant English terminology            |
 
 ## Built With
 
-**React · TypeScript · JavaScript · CSS · Sarvam AI · REST APIs**
+**React · TypeScript · JavaScript · CSS · Sarvam API**
 
----
+Made in India 🇮🇳
