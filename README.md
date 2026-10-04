@@ -41,12 +41,3 @@ Text-to-Speech
 
 ## Example Conversations
 
-| User                                                                                         | Bodh                                                              |
-| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **“मुझे न्यूटन के लॉ समझाओ, with the daily life examples that I see every day in my life.”** | Explains Newton's laws using familiar everyday examples           |
-| **“Photosynthesis kya hota hai? Class 7 ke level pe simple samjhao.”**                       | Gives a simple Hinglish explanation                               |
-| **“Why does the sky look blue? Explain it like I'm 12.”**                                    | Adapts the explanation to the learner's level                     |
-| **“Mujhe gravity samjhao, but formula mat use karna.”**                                      | Explains gravity without using formulas                           |
-| **“Explain the water cycle in Hindi, but keep the scientific terms in English.”**            | Responds in Hindi while keeping scientific terminology in English |
-
----
