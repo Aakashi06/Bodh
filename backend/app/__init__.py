@@ -1,1 +1,1 @@
-"""NIB backend application package."""
+"""Bodh backend application package."""

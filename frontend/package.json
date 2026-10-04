@@ -1,5 +1,5 @@
 {
-  "name": "nib-frontend",
+  "name": "bodh-frontend",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide-react": "^1.52.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
