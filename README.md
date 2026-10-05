@@ -10,9 +10,17 @@ Speak in English, Hindi, or Hinglish. Ask anything. Learn through a conversation
 
 [![React](https://img.shields.io/badge/React-19-149ECA?style=for-the-badge&logo=react&logoColor=white)](https://github.com/Aakashi06/Bodh)
 [![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://github.com/Aakashi06/Bodh)
+[![Node](https://img.shields.io/badge/Node.js-frontend%20tooling-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://github.com/Aakashi06/Bodh)
+[![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=111)](https://github.com/Aakashi06/Bodh)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://github.com/Aakashi06/Bodh)
+[![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://github.com/Aakashi06/Bodh)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://github.com/Aakashi06/Bodh)
-[![Sarvam](https://img.shields.io/badge/Sarvam-STT%20%C2%B7%20Chat%20%C2%B7%20TTS-111111?style=for-the-badge)](https://www.sarvam.ai/)
-[![Languages](https://img.shields.io/badge/voice-English%20%C2%B7%20Hindi%20%C2%B7%20Hinglish-F4A261?style=for-the-badge)](https://github.com/Aakashi06/Bodh)
+[![Uvicorn](https://img.shields.io/badge/Uvicorn-000000?style=for-the-badge)](https://github.com/Aakashi06/Bodh)
+[![Pydantic](https://img.shields.io/badge/Pydantic-E92063?style=for-the-badge&logo=pydantic&logoColor=white)](https://github.com/Aakashi06/Bodh)
+[![Sarvam](https://img.shields.io/badge/Sarvam-105B%20chat-111111?style=for-the-badge)](https://www.sarvam.ai/)
+[![Saaras](https://img.shields.io/badge/Saaras-v4%20STT%20·%20codemix-111111?style=for-the-badge)](https://www.sarvam.ai/)
+[![Bulbul](https://img.shields.io/badge/Bulbul-v3%20TTS%20·%20shubh-111111?style=for-the-badge)](https://www.sarvam.ai/)
+[![Languages](https://img.shields.io/badge/voice-English%20·%20Hindi%20·%20Hinglish-F4A261?style=for-the-badge)](https://github.com/Aakashi06/Bodh)
 
 <br />
 
