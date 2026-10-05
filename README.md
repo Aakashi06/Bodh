@@ -20,9 +20,9 @@ It supports **English, Hindi, Hinglish, and other supported Indian languages**, 
 ## Interface
 
 <p align="center">
-  <img src="./docs/interface-1.png" alt="Bodh Interface" width="32%"/>
-  <img src="./docs/interface-2.png" alt="Bodh Voice Interaction" width="32%"/>
-  <img src="./docs/interface-3.png" alt="Bodh Learning Interface" width="32%"/>
+  
+  <img width="1917" height="990" alt="image" src="https://github.com/user-attachments/assets/ef96789b-8223-400d-bded-32450984ffe5" />
+  <img width="1679" height="979" alt="image" src="https://github.com/user-attachments/assets/1c22fd07-83c7-4b20-b4f7-df980f16b5e7" />
 </p>
 
 ## Voice Pipeline
