@@ -31,8 +31,11 @@ Sarvam is the whole voice stack: **Saaras** for speech-to-text, **sarvam-105b-co
 ## Interface
 
 <p align="center">
-  <img width="48%" alt="Bodh home" src="https://github.com/user-attachments/assets/ef96789b-8223-400d-bded-32450984ffe5" />
-  <img width="48%" alt="Bodh conversation" src="https://github.com/user-attachments/assets/1c22fd07-83c7-4b20-b4f7-df980f16b5e7" />
+  <img width="92%" alt="Bodh home" src="https://github.com/user-attachments/assets/ef96789b-8223-400d-bded-32450984ffe5" />
+</p>
+
+<p align="center">
+  <img width="92%" alt="Bodh conversation" src="https://github.com/user-attachments/assets/1c22fd07-83c7-4b20-b4f7-df980f16b5e7" />
 </p>
 
 <p align="center">
