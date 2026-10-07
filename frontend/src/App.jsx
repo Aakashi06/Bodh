@@ -9,10 +9,11 @@ import Sidebar from "./components/Sidebar.jsx";
 import SuggestionChips from "./components/SuggestionChips.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import VoiceOverlay, { VoiceTurnStage } from "./components/VoiceOverlay.jsx";
-import { sendChatStream, sendQuiz, sendSpeak, sendTranscription } from "./api.js";
+import { sendChatStream, sendQuiz, sendTranscription } from "./api.js";
 import { pickRecorderMime } from "./hooks/useMic.js";
 import { followUpsFor } from "./hooks/useSession.js";
 import { readTheme, persistTheme } from "./hooks/useUser.js";
+import { createVoiceReply } from "./voiceReply.js";
 import useConversations from "./hooks/useConversations.js";
 
 function statusCopy(state, permission) {
@@ -75,6 +76,7 @@ export default function App() {
     const operation = operationRef.current;
     operationRef.current = null;
     operation?.controller.abort();
+    operation?.voiceReply?.cancel();
     finishPlaybackRef.current?.();
     const recorder = recorderRef.current;
     recorderRef.current = null;
@@ -134,6 +136,20 @@ export default function App() {
     if (spoken) setVoiceTurn({ question, draft: "", phase: "thinking" });
     const options = { message: question, conversationId: operation.conversationId, history: operation.history, signal: operation.controller.signal };
     let payload;
+    const voiceReply = spoken && !quizRequested ? createVoiceReply({
+      languageCode, signal: operation.controller.signal, play: playResponse,
+      onStart(text) {
+        if (!isCurrent(operation)) return;
+        setPhase("speaking");
+        setVoiceTurn({ question, draft: text, phase: "speaking" });
+        conversations.update(operation.conversationId, (item) => ({ messages: item.messages.map((message) =>
+          message.id === operation.replyId ? { ...message, content: text } : message) }));
+      },
+      onError(err) {
+        if (isCurrent(operation)) setError(`The answer is available in chat. ${err.message}`);
+      },
+    }) : null;
+    operation.voiceReply = voiceReply;
     if (quizRequested) {
       payload = await sendQuiz(options);
       payload.response = `${payload.quiz.title}\n${payload.quiz.questions.map((q, i) => `${i + 1}. ${q.question}\n${q.options.map((o, j) => `${String.fromCharCode(65 + j)}. ${o}`).join("\n")}`).join("\n")}`;
@@ -142,8 +158,8 @@ export default function App() {
     } else {
       payload = await sendChatStream({ ...options, spoken, onDelta(text) {
         if (!isCurrent(operation)) return;
-        conversations.update(operation.conversationId, (item) => ({ messages: item.messages.map((message) => message.id === operation.replyId ? { ...message, content: text } : message) }));
-        if (spoken) setVoiceTurn({ question, draft: text, phase: "thinking" });
+        if (voiceReply) voiceReply.push(text);
+        else conversations.update(operation.conversationId, (item) => ({ messages: item.messages.map((message) => message.id === operation.replyId ? { ...message, content: text } : message) }));
       } });
     }
     if (!isCurrent(operation)) return;
@@ -151,28 +167,14 @@ export default function App() {
       messages: item.messages.map((message) => message.id === operation.replyId ? { ...message, content: payload.response, quiz: payload.quiz, pending: false } : message),
       suggestions: payload.suggestions?.length ? payload.suggestions : followUpsFor(question),
     }));
-    if (spoken && !quizRequested) {
-      setVoiceTurn({ question, draft: payload.response, phase: "preparing" });
-      setPhase("preparing");
-      try {
-        // Speak the entire answer in bounded segments, without silent truncation.
-        const segments = payload.response.match(/[\s\S]{1,2200}(?:\s|$)|[\s\S]{1,2200}/g) || [];
-        for (const segment of segments) {
-          const audio = await sendSpeak({ text: segment, languageCode, signal: operation.controller.signal });
-          if (!isCurrent(operation)) return;
-          setVoiceTurn({ question, draft: payload.response, phase: "speaking" });
-          setPhase("speaking");
-          await playResponse(audio.audio_base64);
-          if (!isCurrent(operation)) return;
-        }
-      } catch (err) {
-        if (isCurrent(operation)) setError(`The answer is available below. ${err.message}`);
-      }
-    }
+    if (voiceReply) await voiceReply.finish(payload.response);
   }
+
   function finish(operation, err) {
     if (!isCurrent(operation)) return;
     if (err) {
+      operation.voiceReply?.cancel();
+      finishPlaybackRef.current?.();
       setError(err.message || "The request failed. Please try again.");
       conversations.update(operation.conversationId, (item) => ({ messages: item.messages
         .filter((message) => message.id !== operation.replyId || message.content)
@@ -210,7 +212,7 @@ export default function App() {
     }
     tick();
   }
-  async function playResponse(base64) {
+  async function playResponse(base64, onStart) {
     if (!base64) throw new Error("No spoken audio was returned.");
     const audio = audioRef.current;
     if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
@@ -220,11 +222,12 @@ export default function App() {
       let settled = false;
       function finish(err) {
         if (settled) return;
-        settled = true; audio.pause(); audio.onended = null; audio.onerror = null;
+        settled = true; audio.pause(); audio.onended = null; audio.onerror = null; audio.onplaying = null;
         finishPlaybackRef.current = null; stopLevel();
         if (err) reject(err); else resolve();
       }
       finishPlaybackRef.current = () => finish();
+      audio.onplaying = () => { audio.onplaying = null; onStart?.(); };
       audio.onended = () => finish();
       audio.onerror = () => finish(new Error("Audio playback failed. Read the answer below."));
       try {

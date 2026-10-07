@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Local voice streaming test</title></head>
+<body>
+  <h1>Local sentence streaming test</h1>
+  <p>This isolated test uses fake generation, fake synthesis, and timed mock playback. No microphone, backend, or external API is used. Playback is simulated; it makes no sound.</p>
+  <button id="run" type="button">Run test</button>
+  <h2>Generated text</h2><p id="generated"></p>
+  <h2>Text revealed during playback</h2><p id="spoken"></p>
+  <h2>Timestamp log</h2><pre id="log" aria-live="polite"></pre>
+  <script type="module" src="./voice-streaming.js"></script>
+</body>
+</html>
