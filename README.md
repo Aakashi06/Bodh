@@ -100,38 +100,42 @@ Text chat streams over SSE. A voice turn also returns the transcript, so the stu
 
 ---
 
-## Example conversations
+## Example Conversations
 
-**English**
+### 1. Learn a Concept
 
-> Why does the moon change shape?
+> **You:** Explain the difference between Fundamental Rights and Directive Principles.
 >
-> It does not. We see different amounts of its lit side as it moves around Earth. That is a phase, not a new moon each night.
+> **Bodh:** Fundamental Rights protect individual freedoms and are legally enforceable through courts. Directive Principles, on the other hand, are guidelines for the government to promote social and economic welfare, but they are not directly enforceable by courts.
 
-**Hindi**
+### 2. Ask in Hinglish
 
-> प्रकाश संश्लेषण क्या है?
+> **You:** Fundamental Rights aur Directive Principles mein difference simple language mein samjhao.
 >
-> पौधे सूरज की रोशनी, पानी और कार्बन डाइऑक्साइड से अपना भोजन बनाते हैं। इसी प्रक्रिया को प्रकाश संश्लेषण कहते हैं।
+> **Bodh:** Fundamental Rights citizens ko basic freedoms aur protections dete hain, aur agar ye rights violate hote hain toh aap court ja sakte ho. Directive Principles government ke liye guidelines hain jo batati hain ki policies banate waqt social aur economic welfare ko kaise promote karna chahiye.
 
-**Hinglish**
+### 3. Continue in Another Language
 
-> Photosynthesis ko simple Hindi mein samjhaao.
+> **You:** Photosynthesis ko simple language mein samjhao.
 >
-> Plant sunlight leta hai, paani leta hai, aur carbon dioxide leta hai. In teeno se wo apna khana banata hai. Isi ko photosynthesis kehte hain.
+> **Bodh:** Photosynthesis woh process hai jisme plants sunlight, water aur carbon dioxide ka use karke apna food banate hain aur oxygen release karte hain.
 
----
-
+> **You:** Ab same cheez Punjabi mein samjhao.
+>
+> **Bodh:** Photosynthesis ਉਹ ਪ੍ਰਕਿਰਿਆ ਹੈ ਜਿਸ ਵਿੱਚ ਪੌਦੇ ਸੂਰਜ ਦੀ ਰੌਸ਼ਨੀ, ਪਾਣੀ ਅਤੇ ਕਾਰਬਨ ਡਾਈਆਕਸਾਈਡ ਦੀ ਵਰਤੋਂ ਕਰਕੇ ਆਪਣਾ ਭੋਜਨ ਬਣਾਉਂਦੇ ਹਨ ਅਤੇ ਆਕਸੀਜਨ ਛੱਡਦੇ ਹਨ।
 ## Features
 
-- **Multilingual Indian voice.** English, Hindi, Hinglish, and other supported Indian languages in one companion.
-- **Codemix speech-to-text.** Mixed Hindi–English speech is transcribed as one question.
-- **Spoken answers.** Bulbul speaks the reply in the detected language.
-- **Learning chat.** Answers come with follow-up suggestions, so the next question is one tap away.
-- **Text or voice.** Type in the chat, or hold the mic and talk.
-- **Streaming replies.** Text answers stream token by token over SSE.
-- **One provider.** Sarvam handles speech-to-text, chat, and text-to-speech.
-
+- **Multilingual voice conversations.** Talk naturally in English, Hindi, Hinglish, and supported Indian languages.
+- **Code-mixed speech recognition.** Understands Hindi–English mixed speech without requiring manual language switching.
+- **Voice-to-voice pipeline.** Complete STT → LLM → TTS flow turns spoken questions into spoken responses.
+- **Language-aware responses.** Detects the conversation language and responds in the same language.
+- **Natural Indian voice output.** Sarvam Bulbul TTS delivers natural-sounding Indian-language speech.
+- **Voice + text interaction.** Ask by holding the mic and speaking, or simply type in the chat.
+- **Real-time transcription.** Shows the recognized speech so you can see exactly what Bodh understood.
+- **Streaming responses.** Text answers stream token by token using Server-Sent Events (SSE).
+- **Contextual follow-ups.** Maintains conversation context and suggests relevant follow-up questions.
+- **Unified Sarvam pipeline.** Saaras STT, Sarvam conversational models, and Bulbul TTS power the complete voice experience.
+- **Voice-first interface.** A minimal conversational UI built around speaking, listening, and learning.
 ---
 
 ## Stack
