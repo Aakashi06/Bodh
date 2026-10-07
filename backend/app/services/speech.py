@@ -72,9 +72,10 @@ def _prepare_audio(audio: bytes, filename: str, content_type: str | None) -> tup
             ["ffmpeg", "-y", "-i", src_path, "-ac", "1", "-ar", "16000", dst_path],
             check=True,
             capture_output=True,
+            timeout=30,
         )
         return Path(dst_path).read_bytes(), "audio.wav", "audio/wav"
-    except (FileNotFoundError, subprocess.CalledProcessError):
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return audio, filename or "audio.webm", mime or "audio/webm"
     finally:
         Path(src_path).unlink(missing_ok=True)
@@ -105,11 +106,10 @@ def transcribe(audio: bytes, filename: str, content_type: str | None) -> tuple[s
     except httpx.TimeoutException as exc:
         raise SpeechError("Speech-to-text timed out.", status_code=504) from exc
     except httpx.RequestError as exc:
-        raise SpeechError(f"Could not reach Sarvam STT: {exc}", status_code=502) from exc
+        raise SpeechError("Could not reach speech recognition. Please try again.", status_code=502) from exc
 
     if response.status_code >= 400:
-        detail = response.text[:500] if response.text else "no response body"
-        raise SpeechError(f"Sarvam STT error ({response.status_code}): {detail}")
+        raise SpeechError(f"Speech recognition failed ({response.status_code}). Please try again.")
 
     try:
         payload = response.json()
@@ -129,12 +129,16 @@ def tts_language_for(detected: str | None, text: str) -> str:
         return detected
     if any("\u0900" <= ch <= "\u097f" for ch in text):
         return "hi-IN"
+    if text.isascii():
+        return "en-IN"
     return settings.sarvam_language_code if settings.sarvam_language_code in TTS_LANGUAGE_CODES else "hi-IN"
 
 
 def synthesize(text: str, language_code: str | None = None) -> str:
     """Convert text to a base64 WAV string via Sarvam TTS."""
-    clipped = (text or "").strip()[:TTS_MAX_CHARS]
+    clipped = (text or "").strip()
+    if len(clipped) > TTS_MAX_CHARS:
+        raise SpeechError("Voice text is too long. Please use shorter segments.", 400)
     if not clipped:
         raise SpeechError("Nothing to speak.", status_code=400)
 
@@ -153,11 +157,10 @@ def synthesize(text: str, language_code: str | None = None) -> str:
     except httpx.TimeoutException as exc:
         raise SpeechError("Text-to-speech timed out.", status_code=504) from exc
     except httpx.RequestError as exc:
-        raise SpeechError(f"Could not reach Sarvam TTS: {exc}", status_code=502) from exc
+        raise SpeechError("Could not reach speech generation. Please try again.", status_code=502) from exc
 
     if response.status_code >= 400:
-        detail = response.text[:500] if response.text else "no response body"
-        raise SpeechError(f"Sarvam TTS error ({response.status_code}): {detail}")
+        raise SpeechError(f"Speech generation failed ({response.status_code}). Please try again.")
 
     try:
         payload = response.json()

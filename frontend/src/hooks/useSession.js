@@ -26,13 +26,3 @@ export function followUpsFor(question) {
     "Generate a quiz for me",
   ];
 }
-
-export function ensureQuizSuggestion(items, question) {
-  const chips = [...(items || [])].filter(Boolean).slice(0, 3);
-  if (!chips.length) return followUpsFor(question);
-  const hasQuiz = chips.some((item) => /quiz/i.test(item));
-  if (!hasQuiz) {
-    chips[chips.length - 1] = "Generate a quiz for me";
-  }
-  return chips;
-}

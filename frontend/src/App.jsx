@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Mic, Square } from "lucide-react";
+import QuizResults from "./components/QuizResults.jsx";
 import ChatThread from "./components/ChatThread.jsx";
 import CtaRow from "./components/CtaRow.jsx";
 import Headline from "./components/Headline.jsx";
@@ -8,503 +9,306 @@ import Sidebar from "./components/Sidebar.jsx";
 import SuggestionChips from "./components/SuggestionChips.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import VoiceOverlay, { VoiceTurnStage } from "./components/VoiceOverlay.jsx";
-import { sendChatStream, sendSpeak, sendTranscription } from "./api.js";
+import { sendChatStream, sendQuiz, sendSpeak, sendTranscription } from "./api.js";
 import { pickRecorderMime } from "./hooks/useMic.js";
-import { ensureQuizSuggestion, followUpsFor } from "./hooks/useSession.js";
-import { persistTheme } from "./hooks/useUser.js";
-
-function createConversationId() {
-  return crypto.randomUUID ? crypto.randomUUID() : `conv-${Date.now()}`;
-}
+import { followUpsFor } from "./hooks/useSession.js";
+import { readTheme, persistTheme } from "./hooks/useUser.js";
+import useConversations from "./hooks/useConversations.js";
 
 function statusCopy(state, permission) {
+  if (permission === "connecting") return "Connecting…";
   if (permission === "denied") return "Microphone blocked";
-  if (permission === "connecting") return "Connecting...";
-  if (state === "listening") return "Listening...";
-  if (state === "paused") return "Paused";
-  if (state === "thinking") return "Thinking...";
-  if (state === "speaking") return "Speaking...";
-  if (state === "muted") return "Microphone muted";
-  if (state === "error") return "Something went wrong";
-  return "Tap to start talking";
+  return { listening: "Listening…", paused: "Paused", thinking: "Thinking…", speaking: "Speaking…", error: "Please try again" }[state] || "Tap to start talking";
 }
 
-function pickSuggestions(question, payload) {
-  const fromApi = Array.isArray(payload?.suggestions)
-    ? payload.suggestions.map((item) => String(item).trim()).filter(Boolean).slice(0, 3)
-    : [];
-  return ensureQuizSuggestion(fromApi.length ? fromApi : followUpsFor(question), question);
+function isQuizRequest(text) {
+  return /\bquiz\b|test me|क्विज़|क्विज|प्रश्नोत्तरी/i.test(text);
 }
 
 export default function App() {
-  const conversationId = useMemo(() => createConversationId(), []);
-  const recorderRef = useRef(null);
-  const inputRef = useRef(null);
-  const abortRef = useRef(null);
-  const chunksRef = useRef([]);
-  const streamRef = useRef(null);
-  const audioRef = useRef(null);
-  const audioUrlRef = useRef("");
-  const rafRef = useRef(0);
-  const stopRecordingRef = useRef(() => {});
-  const recordingLiveRef = useRef(false);
-  const pausedRef = useRef(false);
-  const lastSoundRef = useRef(0);
-  const lastLevelAtRef = useRef(0);
-  const skipSpeakRef = useRef(() => {});
-  const voiceTurnRef = useRef(null);
-  const loadingRef = useRef(false);
-  const SILENCE_MS = 5000;
-  const SOUND_FLOOR = 0.045;
-
-  const [theme, setTheme] = useState(() => {
-    const stored = localStorage.getItem("bodh.theme");
-    const next =
-      stored === "light" || stored === "dark"
-        ? stored
-        : window.matchMedia?.("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light";
-    persistTheme(next);
-    return next;
-  });
+  const conversations = useConversations();
+  const { messages, suggestions, id: conversationId } = conversations.active;
+  const [theme, setTheme] = useState(readTheme);
   const [screen, setScreen] = useState("home");
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [input, setInput] = useState("");
-  const [suggestions, setSuggestions] = useState([]);
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [paused, setPaused] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
+  const [phase, setPhase] = useState("idle");
   const [error, setError] = useState("");
   const [permission, setPermission] = useState("");
   const [level, setLevel] = useState(0);
-  const [captions, setCaptions] = useState("");
   const [voiceTurn, setVoiceTurn] = useState(null);
-  const reducedMotion = useMemo(
-    () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false,
-    []
-  );
-
+  const [quizResults, setQuizResults] = useState(null);
+  const inputRef = useRef(null);
+  const audioRef = useRef(null);
+  const operationRef = useRef(null);
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const contextRef = useRef(null);
+  const playbackContextRef = useRef(null);
+  const playbackSourceRef = useRef(null);
+  const playbackAnalyserRef = useRef(null);
+  const finishPlaybackRef = useRef(null);
+  const audioUrlRef = useRef("");
+  const rafRef = useRef(0);
+  const sendRecordingRef = useRef(null);
+  const reducedMotion = useMemo(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false, []);
+  const recording = phase === "listening" || phase === "paused";
+  const paused = phase === "paused";
+  const loading = !["idle", "listening", "paused"].includes(phase);
   const inChat = messages.length > 0 && !recording && !voiceTurn;
   const voiceLive = recording || Boolean(voiceTurn);
-  const voiceState = error && !recording
-    ? permission === "denied"
-      ? "error"
-      : "idle"
-    : recording && paused
-      ? "paused"
-      : recording
-        ? "listening"
-        : loading
-          ? "thinking"
-          : speaking
-            ? "speaking"
-            : "idle";
+  const voiceState = error && phase === "idle" ? "error" : phase;
 
-  useEffect(() => () => {
-    cancelAnimationFrame(rafRef.current);
+  useEffect(() => { persistTheme(theme); }, [theme]);
+  function toggleTheme() { setTheme((value) => value === "dark" ? "light" : "dark"); }
+
+  function stopLevel() { cancelAnimationFrame(rafRef.current); setLevel(0); }
+  function releaseMicrophone() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
-    abortRef.current?.abort();
+    streamRef.current = null;
+    contextRef.current?.close().catch(() => {});
+    contextRef.current = null;
+    stopLevel();
+  }
+  function stopAsk() {
+    const operation = operationRef.current;
+    operationRef.current = null;
+    operation?.controller.abort();
+    finishPlaybackRef.current?.();
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    releaseMicrophone();
+    if (operation) conversations.update(operation.conversationId, (item) => ({ messages: item.messages
+      .filter((message) => message.id !== operation.replyId || message.content)
+      .map((message) => message.id === operation.replyId ? { ...message, pending: false } : message) }));
+    setVoiceTurn(null);
+    setPhase("idle");
+    setPermission("");
+  }
+  function endVoice() { stopAsk(); }
+  useEffect(() => () => {
+    operationRef.current?.controller.abort();
+    finishPlaybackRef.current?.();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    cancelAnimationFrame(rafRef.current);
+    contextRef.current?.close().catch(() => {});
+    playbackContextRef.current?.close().catch(() => {});
     if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
   }, []);
-
   useEffect(() => {
-    const onKey = (event) => {
-      if (event.key === "Escape" && (recording || speaking)) {
-        event.preventDefault();
-        endVoice();
-      }
-      if (inChat || event.code !== "Space" || event.repeat) return;
-      const tag = document.activeElement?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+    function onKey(event) {
+      if (quizResults) return;
+      if (event.key === "Escape") { if (operationRef.current) { event.preventDefault(); stopAsk(); } return; }
+      if (screen !== "home" || inChat || event.code !== "Space" || event.repeat) return;
+      if (["INPUT", "TEXTAREA", "BUTTON"].includes(document.activeElement?.tagName)) return;
       event.preventDefault();
-      if (recording) stopRecording();
-      else if (!loading && !speaking) startRecording();
-    };
+      if (recording) stopRecording(); else startRecording();
+    }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  function toggleTheme() {
-    const next = theme === "dark" ? "light" : "dark";
-    persistTheme(next);
-    setTheme(next);
+  function beginOperation() {
+    if (operationRef.current) return null;
+    const operation = { controller: new AbortController(), conversationId, replyId: crypto.randomUUID(), history: messages
+      .filter((message) => message.content && !message.pending)
+      .slice(-12).map(({ role, content }) => ({ role, content: content.slice(0, 8000) })) };
+    operationRef.current = operation;
+    setError(""); setScreen("home");
+    return operation;
+  }
+  function isCurrent(operation) { return operationRef.current === operation && !operation.controller.signal.aborted; }
+  function changeQuiz(messageId, attempt) {
+    conversations.update(conversationId, (item) => ({ messages: item.messages.map((message) => message.id === messageId ? { ...message, attempt } : message) }));
+  }
+  async function answer(question, operation, spoken = false, languageCode) {
+    conversations.update(operation.conversationId, (item) => ({
+      title: item.messages.length ? item.title : question.slice(0, 80), suggestions: [],
+      messages: [...item.messages, { id: crypto.randomUUID(), role: "user", content: question },
+        { id: operation.replyId, role: "assistant", content: "", pending: true }],
+    }));
+    setPhase("thinking");
+    const quizRequested = isQuizRequest(question);
+    if (spoken) setVoiceTurn({ question, draft: "", phase: "thinking" });
+    const options = { message: question, conversationId: operation.conversationId, history: operation.history, signal: operation.controller.signal };
+    let payload;
+    if (quizRequested) {
+      payload = await sendQuiz(options);
+      payload.response = `${payload.quiz.title}\n${payload.quiz.questions.map((q, i) => `${i + 1}. ${q.question}\n${q.options.map((o, j) => `${String.fromCharCode(65 + j)}. ${o}`).join("\n")}`).join("\n")}`;
+      payload.quiz.id = operation.replyId;
+      payload.suggestions = ["Explain this topic more simply", "Generate a harder quiz"];
+    } else {
+      payload = await sendChatStream({ ...options, spoken, onDelta(text) {
+        if (!isCurrent(operation)) return;
+        conversations.update(operation.conversationId, (item) => ({ messages: item.messages.map((message) => message.id === operation.replyId ? { ...message, content: text } : message) }));
+        if (spoken) setVoiceTurn({ question, draft: text, phase: "thinking" });
+      } });
+    }
+    if (!isCurrent(operation)) return;
+    conversations.update(operation.conversationId, (item) => ({
+      messages: item.messages.map((message) => message.id === operation.replyId ? { ...message, content: payload.response, quiz: payload.quiz, pending: false } : message),
+      suggestions: payload.suggestions?.length ? payload.suggestions : followUpsFor(question),
+    }));
+    if (spoken && !quizRequested) {
+      setVoiceTurn({ question, draft: payload.response, phase: "preparing" });
+      setPhase("preparing");
+      try {
+        // Speak the entire answer in bounded segments, without silent truncation.
+        const segments = payload.response.match(/[\s\S]{1,2200}(?:\s|$)|[\s\S]{1,2200}/g) || [];
+        for (const segment of segments) {
+          const audio = await sendSpeak({ text: segment, languageCode, signal: operation.controller.signal });
+          if (!isCurrent(operation)) return;
+          setVoiceTurn({ question, draft: payload.response, phase: "speaking" });
+          setPhase("speaking");
+          await playResponse(audio.audio_base64);
+          if (!isCurrent(operation)) return;
+        }
+      } catch (err) {
+        if (isCurrent(operation)) setError(`The answer is available below. ${err.message}`);
+      }
+    }
+  }
+  function finish(operation, err) {
+    if (!isCurrent(operation)) return;
+    if (err) {
+      setError(err.message || "The request failed. Please try again.");
+      conversations.update(operation.conversationId, (item) => ({ messages: item.messages
+        .filter((message) => message.id !== operation.replyId || message.content)
+        .map((message) => message.id === operation.replyId ? { ...message, pending: false } : message) }));
+    }
+    operationRef.current = null; setPhase("idle"); setVoiceTurn(null);
+  }
+  async function ask(text) {
+    const question = text.trim();
+    if (!question) return;
+    if (question.length > 8000) { setError("Please keep your question under 8,000 characters."); return; }
+    const operation = beginOperation();
+    if (!operation) return;
+    try { await answer(question, operation); finish(operation); }
+    catch (err) { finish(operation, err); }
   }
 
-  function watchLevel(sourceNode, context, { forRecording = false } = {}) {
-    const analyser = context.createAnalyser();
-    analyser.fftSize = 256;
-    sourceNode.connect(analyser);
-    if (!sourceNode.mediaStream) analyser.connect(context.destination);
-    const data = new Uint8Array(analyser.frequencyBinCount);
-    const tick = () => {
+  function monitor(analyser, operation, microphone = false) {
+    stopLevel();
+    const data = new Uint8Array(analyser.fftSize);
+    let lastSound = Date.now();
+    let lastRender = 0;
+    const started = Date.now();
+    function tick() {
+      if (!operation || !isCurrent(operation)) return;
       analyser.getByteTimeDomainData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) {
-        const v = (data[i] - 128) / 128;
-        sum += v * v;
-      }
-      const rms = Math.min(1, Math.sqrt(sum / data.length) * 4);
+      const rms = Math.min(1, Math.sqrt(data.reduce((sum, value) => sum + ((value - 128) / 128) ** 2, 0) / data.length) * 4);
       const now = Date.now();
-      if (now - lastLevelAtRef.current > 80) {
-        lastLevelAtRef.current = now;
-        setLevel(rms);
-      }
-      if (forRecording && recordingLiveRef.current && !pausedRef.current) {
-        if (rms >= SOUND_FLOOR) lastSoundRef.current = Date.now();
-        else if (Date.now() - lastSoundRef.current >= SILENCE_MS) {
-          recordingLiveRef.current = false;
-          stopRecordingRef.current();
-        }
+      if (now - lastRender > 80) { setLevel(rms); lastRender = now; }
+      if (microphone) {
+        if (recorderRef.current?.state === "paused" || rms >= 0.045) lastSound = now;
+        if (now - lastSound >= 5000 || now - started >= 120000) { sendRecordingRef.current?.(); return; }
       }
       rafRef.current = requestAnimationFrame(tick);
-    };
+    }
     tick();
   }
-
-  function stopLevel() {
-    cancelAnimationFrame(rafRef.current);
-    setLevel(0);
-  }
-
-  function playResponse(audioBase64) {
-    return new Promise((resolve) => {
+  async function playResponse(base64) {
+    if (!base64) throw new Error("No spoken audio was returned.");
+    const audio = audioRef.current;
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    audioUrlRef.current = URL.createObjectURL(new Blob([Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))], { type: "audio/wav" }));
+    audio.src = audioUrlRef.current;
+    return new Promise((resolve, reject) => {
       let settled = false;
-      const finish = () => {
+      function finish(err) {
         if (settled) return;
-        settled = true;
-        setSpeaking(false);
-        stopLevel();
-        resolve();
-      };
-      if (!audioBase64) {
-        finish();
-        return;
+        settled = true; audio.pause(); audio.onended = null; audio.onerror = null;
+        finishPlaybackRef.current = null; stopLevel();
+        if (err) reject(err); else resolve();
       }
-      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
-      const bytes = Uint8Array.from(atob(audioBase64), (c) => c.charCodeAt(0));
-      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
-      audioUrlRef.current = url;
-      const audio = audioRef.current;
-      if (!audio) {
-        finish();
-        return;
-      }
-      audio.src = url;
-      audio.onended = finish;
-      audio.onerror = finish;
-      skipSpeakRef.current = () => {
-        audio.pause();
-        audio.currentTime = 0;
-        finish();
-      };
-      audio.onplay = () => {
-        setSpeaking(true);
-        try {
+      finishPlaybackRef.current = () => finish();
+      audio.onended = () => finish();
+      audio.onerror = () => finish(new Error("Audio playback failed. Read the answer below."));
+      try {
+        if (!playbackContextRef.current) {
           const context = new AudioContext();
-          if (!audio._bodhGraph) {
-            audio._bodhGraph = context.createMediaElementSource(audio);
-            watchLevel(audio._bodhGraph, context);
-          }
-        } catch {
-          stopLevel();
+          playbackContextRef.current = context;
+          playbackSourceRef.current = context.createMediaElementSource(audio);
+          playbackAnalyserRef.current = context.createAnalyser();
+          playbackSourceRef.current.connect(playbackAnalyserRef.current);
+          playbackAnalyserRef.current.connect(context.destination);
         }
-      };
-      audio.play().catch(finish);
+        playbackContextRef.current.resume().catch(() => {});
+        monitor(playbackAnalyserRef.current, operationRef.current);
+      } catch { /* Playback remains useful without an amplitude meter. */ }
+      audio.play().catch(() => finish(new Error("Your browser blocked audio playback. Read the answer below.")));
     });
   }
-
-  function commitVoiceTurn(question, reply, payload) {
-    if (!question) return;
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: question },
-      { role: "assistant", content: reply || "" },
-    ]);
-    setSuggestions(pickSuggestions(question, payload || { suggestions: [] }));
-    setVoiceTurn(null);
-    voiceTurnRef.current = null;
-    setSpeaking(false);
-  }
-
-  async function runVoiceTurn(transcript, languageCode) {
-    const question = (transcript || "").trim();
-    if (!question || loadingRef.current) return;
-    const history = messages
-      .filter((message) => !message.pending && message.content)
-      .map((message) => ({ role: message.role, content: message.content }));
-    const turn = { question, draft: "", phase: "thinking", languageCode };
-    voiceTurnRef.current = turn;
-    setVoiceTurn(turn);
-    loadingRef.current = true;
-    setLoading(true);
-    const controller = new AbortController();
-    abortRef.current = controller;
-    let reply = "";
-    let payload = { suggestions: [] };
-    try {
-      payload = await sendChatStream({
-        message: question,
-        conversationId,
-        history,
-        spoken: true,
-        signal: controller.signal,
-        onDelta(visible) {
-          reply = visible;
-          setVoiceTurn((prev) => (prev ? { ...prev, draft: visible } : prev));
-        },
-      });
-      reply = payload.response || reply;
-      setVoiceTurn((prev) => (prev ? { ...prev, draft: reply, phase: "speaking" } : prev));
-      try {
-        const spoken = await sendSpeak({ text: reply, languageCode });
-        await playResponse(spoken.audio_base64);
-      } catch {
-        /* still land in chat if TTS fails */
-      }
-      commitVoiceTurn(question, reply, payload);
-    } catch (err) {
-      if (err.name === "AbortError") {
-        commitVoiceTurn(question, reply, payload);
-      } else {
-        setError(err.message || "Voice request failed.");
-        setVoiceTurn(null);
-        voiceTurnRef.current = null;
-      }
-    } finally {
-      loadingRef.current = false;
-      setLoading(false);
-      abortRef.current = null;
-    }
-  }
-
-  function stopAsk() {
-    abortRef.current?.abort();
-    skipSpeakRef.current();
-  }
-
-  async function ask(text) {
-    const question = (text || "").trim();
-    if (!question || recordingLiveRef.current || loadingRef.current) return;
-    setError("");
-    setSuggestions([]);
-    setScreen("home");
-    const history = messages
-      .filter((message) => !message.pending && message.content)
-      .map((message) => ({ role: message.role, content: message.content }));
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: question },
-      { role: "assistant", content: "", pending: true },
-    ]);
-    loadingRef.current = true;
-    setLoading(true);
-    setCaptions("");
-    const controller = new AbortController();
-    abortRef.current = controller;
-    try {
-      const data = await sendChatStream({
-        message: question,
-        conversationId,
-        history,
-        signal: controller.signal,
-        onDelta(visible) {
-          setMessages((prev) => {
-            const next = [...prev];
-            const last = next[next.length - 1];
-            if (last?.role === "assistant") {
-              next[next.length - 1] = { ...last, content: visible, pending: true };
-            }
-            return next;
-          });
-        },
-      });
-      setMessages((prev) => {
-        const next = [...prev];
-        const last = next[next.length - 1];
-        if (last?.role === "assistant") {
-          next[next.length - 1] = { role: "assistant", content: data.response, pending: false };
-        }
-        return next;
-      });
-      setSuggestions(pickSuggestions(question, data));
-    } catch (err) {
-      if (err.name === "AbortError") {
-        setMessages((prev) => {
-          const next = [...prev];
-          const last = next[next.length - 1];
-          if (last?.role === "assistant" && last.pending && !last.content) return next.slice(0, -2);
-          if (last?.role === "assistant") next[next.length - 1] = { ...last, pending: false };
-          return next;
-        });
-      } else {
-        setError(err.message || "Something went wrong.");
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "assistant" && last.pending && !last.content) return prev.slice(0, -1);
-          return prev.map((message, index) =>
-            index === prev.length - 1 && message.pending ? { ...message, pending: false } : message
-          );
-        });
-      }
-    } finally {
-      loadingRef.current = false;
-      setLoading(false);
-      abortRef.current = null;
-    }
-  }
-
   async function startRecording() {
-    setError("");
-    setPermission("connecting");
-    setScreen("home");
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setPermission("error");
-      setError("This browser does not support the microphone.");
-      return;
-    }
+    const operation = beginOperation();
+    if (!operation) return;
+    setPermission("connecting"); setPhase("connecting");
     try {
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) throw new Error("This browser does not support microphone recording.");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      setPermission("ready");
+      if (!isCurrent(operation)) { stream.getTracks().forEach((track) => track.stop()); return; }
       streamRef.current = stream;
-      chunksRef.current = [];
       const mimeType = pickRecorderMime();
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const chunks = [];
       recorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      operation.audioChunks = chunks;
+      recorder.onerror = () => {
+        if (recorder.state !== "inactive") recorder.stop();
+        recorderRef.current = null; releaseMicrophone();
+        finish(operation, new Error("Recording failed. Please try again."));
       };
-      recorder.start();
-      lastSoundRef.current = Date.now();
-      pausedRef.current = false;
-      recordingLiveRef.current = true;
-      setPaused(false);
-      setRecording(true);
-      const context = new AudioContext();
-      watchLevel(context.createMediaStreamSource(stream), context, { forRecording: true });
+      recorder.start(1000);
+      setPermission("ready"); setPhase("listening");
+      const context = new AudioContext(); contextRef.current = context;
+      const analyser = context.createAnalyser(); context.createMediaStreamSource(stream).connect(analyser);
+      monitor(analyser, operation, true);
     } catch (err) {
+      if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+      recorderRef.current = null; releaseMicrophone();
       setPermission(err.name === "NotAllowedError" ? "denied" : "error");
-      setError(err.name === "NotAllowedError" ? "Microphone access was denied." : "Could not access the microphone.");
+      finish(operation, new Error(err.name === "NotAllowedError" ? "Microphone access was denied. Enable it in browser settings." : err.message));
     }
   }
-
   async function stopRecording() {
+    const operation = operationRef.current;
     const recorder = recorderRef.current;
-    recordingLiveRef.current = false;
-    pausedRef.current = false;
-    setPaused(false);
-    if (!recorder || recorder.state === "inactive") {
-      setRecording(false);
-      stopLevel();
-      return;
-    }
-    setVoiceTurn({ question: "", draft: "", phase: "hearing" });
-    setSuggestions([]);
-    setRecording(false);
-    const blob = await new Promise((resolve) => {
-      recorder.onstop = () => {
-        const type = (recorder.mimeType || "audio/webm").split(";")[0] || "audio/webm";
-        resolve(new Blob(chunksRef.current, { type }));
-      };
-      recorder.stop();
-    });
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    recorderRef.current = null;
-    stopLevel();
-    if (!blob.size) {
-      setVoiceTurn(null);
-      setError("No audio was captured. Try again.");
-      return;
-    }
+    if (!operation || !recorder || operation.sending) return;
+    operation.sending = true;
+    setPhase("hearing"); setVoiceTurn({ phase: "hearing", question: "", draft: "" });
     try {
-      const data = await sendTranscription({
-        audioBlob: blob,
-        filename: blob.type.includes("mp4") ? "audio.m4a" : "audio.webm",
-        conversationId,
-      });
-      const transcript = (data.transcript || "").trim();
-      setCaptions(transcript);
-      setVoiceTurn({
-        question: transcript,
-        draft: "",
-        phase: "thinking",
-        languageCode: data.language_code,
-      });
-      await runVoiceTurn(transcript, data.language_code);
-    } catch (err) {
-      setError(err.message || "Voice request failed.");
-      setVoiceTurn(null);
-    }
-  }
-
-  function cancelRecording() {
-    recordingLiveRef.current = false;
-    pausedRef.current = false;
-    setPaused(false);
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== "inactive") {
-      try {
+      const blob = await new Promise((resolve) => {
+        recorder.onstop = () => resolve(new Blob(operation.audioChunks, { type: recorder.mimeType.split(";")[0] || "audio/webm" }));
         recorder.stop();
-      } catch {
-        /* already stopped */
-      }
-    }
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    recorderRef.current = null;
-    chunksRef.current = [];
-    setRecording(false);
-    stopLevel();
+      });
+      recorderRef.current = null; releaseMicrophone();
+      if (!isCurrent(operation)) return;
+      if (!blob.size) throw new Error("No audio was captured. Please try again.");
+      const data = await sendTranscription({ audioBlob: blob, filename: blob.type.includes("mp4") ? "audio.m4a" : "audio.webm", conversationId: operation.conversationId, signal: operation.controller.signal });
+      if (!isCurrent(operation)) return;
+      if (!data.transcript?.trim()) throw new Error("No speech was recognized. Please try again.");
+      await answer(data.transcript.trim(), operation, true, data.language_code);
+      finish(operation);
+    } catch (err) { finish(operation, err); }
   }
-
+  sendRecordingRef.current = stopRecording;
   function toggleVoicePause() {
     const recorder = recorderRef.current;
-    if (!recording || !recorder) return;
-    if (recorder.state === "recording") {
-      recorder.pause();
-      pausedRef.current = true;
-      setPaused(true);
-    } else if (recorder.state === "paused") {
-      recorder.resume();
-      lastSoundRef.current = Date.now();
-      pausedRef.current = false;
-      setPaused(false);
-    }
+    if (recorder?.state === "recording") { recorder.pause(); setPhase("paused"); }
+    else if (recorder?.state === "paused") { recorder.resume(); setPhase("listening"); }
   }
-
-  function endVoice() {
-    if (recording) cancelRecording();
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      audio.currentTime = 0;
-    }
-    setSpeaking(false);
-    setPaused(false);
-    setRecording(false);
-    stopLevel();
-  }
-
-  const recents = useMemo(() => {
-    const asked = messages
-      .filter((message) => message.role === "user")
-      .map((message) => message.content)
-      .slice(-8)
-      .reverse();
-    return asked.length ? { "This session": asked } : {};
-  }, [messages]);
-
+  function openConversation(id) { stopAsk(); conversations.open(id); setScreen("home"); setInput(""); setError(""); }
+  function newChat() { stopAsk(); conversations.create(); setScreen("home"); setInput(""); setError(""); }
+  const recents = { "Conversations": conversations.items.filter((item) => item.messages.length).map((item) => ({ id: item.id, title: item.title })) };
   function submitComposer(event) {
     event.preventDefault();
-    const value = input;
-    setInput("");
-    ask(value);
+    if (operationRef.current || !input.trim()) return;
+    ask(input); setInput("");
   }
-
   const composer = (
     <form className="composer" onSubmit={submitComposer}>
       <button
@@ -530,18 +334,17 @@ export default function App() {
           Stop
         </button>
       ) : (
-        <button className="send" type="submit" disabled={!input.trim()}>Send</button>
+        <button className="send" type="submit" disabled={!input.trim() || recording}>Send</button>
       )}
     </form>
   );
 
-  stopRecordingRef.current = stopRecording;
 
   return (
     <div className={`layout${collapsed ? " is-collapsed" : ""}`}>
       <Sidebar
         screen={screen}
-        onNavigate={setScreen}
+        onNavigate={(next) => { stopAsk(); setScreen(next); }}
         collapsed={collapsed}
         onToggle={() => {
           if (window.innerWidth < 768) setMobileOpen((open) => !open);
@@ -550,7 +353,8 @@ export default function App() {
         mobileOpen={mobileOpen}
         onCloseMobile={() => setMobileOpen(false)}
         recents={recents}
-        onOpenChat={() => setScreen("home")}
+        onOpenChat={openConversation}
+        onNewChat={newChat}
       />
 
       <div className={`canvas${inChat || voiceLive || screen !== "home" ? " is-page" : ""}${inChat && screen === "home" ? " is-chat" : ""}`}>
@@ -577,7 +381,8 @@ export default function App() {
             draft={voiceTurn.draft}
             level={level}
             reducedMotion={reducedMotion}
-            onSkip={() => skipSpeakRef.current()}
+            onSkip={stopAsk}
+            onCancel={stopAsk}
           />
         ) : null}
 
@@ -608,7 +413,7 @@ export default function App() {
 
         {screen === "home" && inChat ? (
           <div className="chat-shell">
-            <ChatThread messages={messages} loading={loading} />
+            <ChatThread messages={messages} loading={loading} onQuizChange={changeQuiz} onQuizResults={(message, attempt) => setQuizResults({ messageId: message.id, quiz: message.quiz, attempt })} />
             {error ? <p className="err chat-err" role="alert">{error}</p> : null}
             {!loading ? <SuggestionChips items={suggestions} onPick={ask} /> : null}
             <div className="chat-dock">{composer}</div>
@@ -619,9 +424,9 @@ export default function App() {
           <section className="panel">
             <h2>History</h2>
             {messages.length === 0 ? (
-              <p className="micro">This session has no conversations yet.</p>
+              <p className="micro">No questions in this conversation yet.</p>
             ) : (
-              <ChatThread messages={messages} loading={false} />
+              <ChatThread messages={messages} loading={false} onQuizChange={changeQuiz} onQuizResults={(message, attempt) => setQuizResults({ messageId: message.id, quiz: message.quiz, attempt })} />
             )}
           </section>
         ) : null}
@@ -630,10 +435,21 @@ export default function App() {
           <section className="panel">
             <h2>Settings</h2>
             <p className="micro">Theme follows your last choice. First visit follows the system.</p>
-            <ThemeToggle theme={theme} onToggle={toggleTheme} />
+            <button type="button" className="ghost" onClick={toggleTheme}>Switch to {theme === "dark" ? "light" : "dark"} theme</button>
+            <p className="micro">History is saved on this browser. Questions and recordings are sent to Sarvam to generate responses.</p>
+            <button type="button" className="ghost" onClick={() => { if (window.confirm("Delete all saved conversations on this device?")) { stopAsk(); conversations.clear(); } }}>Clear saved history</button>
           </section>
         ) : null}
 
+        {conversations.storageError ? <p className="err" role="alert">{conversations.storageError}</p> : null}
+        {quizResults ? <QuizResults
+          quiz={quizResults.quiz} attempt={quizResults.attempt}
+          onClose={() => setQuizResults(null)}
+          onRetry={() => {
+            changeQuiz(quizResults.messageId, { answers: {}, submitted: false });
+            setQuizResults(null);
+          }}
+        /> : null}
         <audio ref={audioRef} className="sr-only" />
       </div>
     </div>

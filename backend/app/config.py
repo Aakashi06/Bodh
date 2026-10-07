@@ -14,8 +14,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    backend_host: str = "0.0.0.0"
+    backend_host: str = "127.0.0.1"
     backend_port: int = 8000
+    requests_per_minute: int = 60
     cors_origins: str = "http://localhost:5173"
 
     sarvam_api_key: str = ""

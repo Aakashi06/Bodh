@@ -1,4 +1,4 @@
-import { Home, History, Settings, PanelLeft, Menu, X } from "lucide-react";
+import { Home, History, Settings, PanelLeft, Menu, X, MessageSquarePlus } from "lucide-react";
 
 const ICONS = { home: Home, history: History, settings: Settings };
 
@@ -11,6 +11,7 @@ export default function Sidebar({
   onCloseMobile,
   recents,
   onOpenChat,
+  onNewChat,
 }) {
   return (
     <>
@@ -30,6 +31,10 @@ export default function Sidebar({
         </div>
 
         <nav className="side-nav" aria-label="Primary">
+          <button type="button" className="side-item" onClick={() => { onNewChat(); onCloseMobile(); }} aria-label="New conversation">
+            <MessageSquarePlus size={18} strokeWidth={1.5} />
+            {!collapsed ? <span>New conversation</span> : null}
+          </button>
           {["home", "history", "settings"].map((id) => {
             const Icon = ICONS[id];
             const label = id[0].toUpperCase() + id.slice(1);
@@ -54,15 +59,15 @@ export default function Sidebar({
 
         {!collapsed ? (
           <div className="recents">
-            {Object.keys(recents).length === 0 ? (
+            {Object.values(recents).every((items) => items.length === 0) ? (
               <p className="micro recents-empty">Your questions will land here.</p>
             ) : (
               Object.entries(recents).map(([group, items]) => (
                 <div key={group}>
                   <p className="micro">{group}</p>
-                  {items.map((title) => (
-                    <button key={title} type="button" className="recent-title" onClick={() => { onOpenChat?.(); onCloseMobile(); }}>
-                      {title}
+                  {items.map((item) => (
+                    <button key={item.id} type="button" className="recent-title" onClick={() => { onOpenChat?.(item.id); onCloseMobile(); }}>
+                      {item.title}
                     </button>
                   ))}
                 </div>

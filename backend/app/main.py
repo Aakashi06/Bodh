@@ -5,9 +5,12 @@ import json
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
+from app.services.quiz import generate_quiz
 
 from app.config import settings
-from app.schemas import ChatRequest, ChatResponse, SpeakRequest, SpeakResponse, TranscribeResponse, VoiceResponse
+from app.middleware import RequestLimits
+from app.schemas import ChatRequest, ChatResponse, SpeakRequest, SpeakResponse, TranscribeResponse
 from app.services.llm import LLMError, complete_chat, stream_chat
 from app.services.speech import SpeechError, synthesize, transcribe
 
@@ -15,24 +18,26 @@ MAX_AUDIO_BYTES = 8 * 1024 * 1024
 
 app = FastAPI(title="Bodh", version="0.1.0")
 
+app.add_middleware(RequestLimits)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list or ["http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict:
+    return {"status": "ok", "provider_configured": bool(settings.sarvam_api_key.strip())}
 
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
     try:
-        reply, suggestions = complete_chat(request.message, request.history, spoken=False)
+        reply, suggestions = complete_chat(request.message, request.history, spoken=request.spoken)
     except LLMError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return ChatResponse(
@@ -56,7 +61,7 @@ def chat_stream(request: ChatRequest) -> StreamingResponse:
                 spoken=request.spoken,
             ):
                 if kind == "delta":
-                    yield _sse({"delta": text})
+                    yield _sse({"text": text})
                 elif kind == "done":
                     yield _sse(
                         {
@@ -84,13 +89,14 @@ async def transcribe_audio(
     conversation_id: str = Form(..., min_length=1, max_length=128),
     file: UploadFile = File(...),
 ) -> TranscribeResponse:
-    audio = await file.read()
+    audio = await file.read(MAX_AUDIO_BYTES + 1)
+    await file.close()
     if not audio:
         raise HTTPException(status_code=400, detail="Audio upload is empty.")
     if len(audio) > MAX_AUDIO_BYTES:
         raise HTTPException(status_code=400, detail="Audio file is too large (max 8MB).")
     try:
-        transcript, _detected = transcribe(
+        transcript, _detected = await run_in_threadpool(transcribe,
             audio,
             file.filename or "audio.webm",
             file.content_type,
@@ -115,35 +121,11 @@ def speak(request: SpeakRequest) -> SpeakResponse:
     return SpeakResponse(audio_base64=audio_b64)
 
 
-@app.post("/api/voice", response_model=VoiceResponse)
-async def voice(
-    conversation_id: str = Form(..., min_length=1, max_length=128),
-    file: UploadFile = File(...),
-) -> VoiceResponse:
-    audio = await file.read()
-    if not audio:
-        raise HTTPException(status_code=400, detail="Audio upload is empty.")
-    if len(audio) > MAX_AUDIO_BYTES:
-        raise HTTPException(status_code=400, detail="Audio file is too large (max 8MB).")
 
+@app.post("/api/quiz")
+def quiz(request: ChatRequest):
     try:
-        transcript, detected_language = transcribe(
-            audio,
-            file.filename or "audio.webm",
-            file.content_type,
-        )
-        reply, suggestions = complete_chat(transcript)
-        audio_b64 = synthesize(reply, language_code=detected_language)
-    except SpeechError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        return {"quiz": generate_quiz(request.message, request.history),
+                "conversation_id": request.conversation_id}
     except LLMError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
-
-    return VoiceResponse(
-        transcript=transcript,
-        response=reply,
-        conversation_id=conversation_id,
-        audio_base64=audio_b64,
-        audio_format="wav",
-        suggestions=suggestions,
-    )

@@ -1,8 +1,9 @@
+import Quiz from "./Quiz.jsx";
 import { useEffect, useRef } from "react";
 
 function QuestionItem({ text }) {
   const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
-  const stem = lines[0] || text;
+  const stem = lines.filter((line) => !/^[A-Da-d][.)]/.test(line)).join("\n") || text;
   const options = lines.slice(1).filter((line) => /^[A-Da-d][.)]/.test(line));
   return (
     <li>
@@ -53,23 +54,26 @@ function MessageBody({ text, pending }) {
   );
 }
 
-export default function ChatThread({ messages, loading, status }) {
+export default function ChatThread({ messages, loading, status, onQuizChange, onQuizResults }) {
   const threadRef = useRef(null);
   const last = messages[messages.length - 1];
   const waiting = loading && (!last || last.role !== "assistant" || !last.content);
 
+  const scrollKey = messages.map((message) => `${message.id}:${message.content}:${message.pending}`).join("|");
   useEffect(() => {
     const node = threadRef.current;
     if (!node) return;
     node.scrollTop = node.scrollHeight;
-  }, [messages, loading, status]);
+  }, [scrollKey, loading, status]);
 
   return (
     <div className="chat-thread" ref={threadRef} aria-live="polite">
       {messages.map((message, index) => (
-        <article key={index} className={`bubble bubble-${message.role}`}>
+        <article key={message.id || index} className={`bubble bubble-${message.role}`}>
           <p className="micro">{message.role === "user" ? "You" : "Bodh"}</p>
-          {message.role === "assistant" && !message.content && message.pending ? (
+          {message.quiz ? (
+            <Quiz quiz={message.quiz} attempt={message.attempt} onChange={(attempt) => onQuizChange(message.id, attempt)} onResults={(attempt) => onQuizResults(message, attempt)} />
+          ) : message.role === "assistant" && !message.content && message.pending ? (
             <p className="thinking">Thinking…</p>
           ) : (
             <MessageBody text={message.content} pending={message.pending} />

@@ -1,225 +1,86 @@
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
-function errorFromPayload(payload, status) {
-  const detail = payload?.detail;
-  if (typeof detail === "string") return detail;
-  if (Array.isArray(detail)) {
-    return detail.map((item) => item.msg || JSON.stringify(item)).join(" ");
-  }
-  return `Request failed (${status})`;
-}
-
-async function parseJson(response) {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
-export async function sendChatStream({
-  message,
-  conversationId,
-  history = [],
-  spoken = false,
-  onDelta,
-  signal,
-}) {
+async function request(path, { signal, ...options }, read) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000);
-  if (signal) {
-    if (signal.aborted) controller.abort();
-    else signal.addEventListener("abort", () => controller.abort(), { once: true });
-  }
-
+  let timedOut = false;
+  const cancel = () => controller.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
+  if (signal?.aborted) cancel();
+  const timer = setTimeout(() => { timedOut = true; cancel(); }, 150000);
   try {
-    const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message,
-        conversation_id: conversationId,
-        history,
-        spoken,
-      }),
-      signal: controller.signal,
-    });
-
+    const response = await fetch(`${API_BASE_URL}${path}`, { ...options, signal: controller.signal });
     if (!response.ok) {
-      const payload = await parseJson(response);
-      throw new Error(errorFromPayload(payload, response.status));
+      const payload = await response.json().catch(() => null);
+      const detail = payload?.detail;
+      throw new Error(typeof detail === "string" ? detail : `Request failed (${response.status}). Please try again.`);
     }
-    if (!response.body) {
-      throw new Error("Streaming is not available in this browser.");
-    }
+    return await read(response);
+  } catch (error) {
+    if (timedOut) throw new Error("The request timed out. Please try again.");
+    if (error instanceof TypeError) throw new Error("Could not reach the Bodh backend. Check the API URL and connection.");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", cancel);
+  }
+}
 
+function postJson(path, body, signal) {
+  return request(path, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body), signal,
+  }, (response) => response.json());
+}
+
+export function sendQuiz({ message, conversationId, history, signal }) {
+  return postJson("/api/quiz", { message, conversation_id: conversationId, history }, signal);
+}
+
+export function sendChatStream({ message, conversationId, history = [], spoken = false, onDelta, signal }) {
+  return request("/api/chat/stream", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, conversation_id: conversationId, history, spoken }), signal,
+  }, async (response) => {
+    if (!response.body) throw new Error("Streaming is unavailable in this browser.");
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let visible = "";
-    let donePayload = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const chunks = buffer.split("\n\n");
-      buffer = chunks.pop() || "";
-      for (const chunk of chunks) {
-        const line = chunk
-          .split("\n")
-          .find((entry) => entry.startsWith("data: "));
-        if (!line) continue;
-        let data;
-        try {
-          data = JSON.parse(line.slice(6));
-        } catch {
-          continue;
-        }
-        if (data.error) {
-          throw new Error(data.error);
-        }
-        if (data.delta) {
-          visible += data.delta;
-          onDelta?.(visible);
-        }
-        if (data.done) {
-          donePayload = data;
-        }
+    let result;
+    function consume(event) {
+      const dataLine = event.split("\n").find((line) => line.startsWith("data:"));
+      if (!dataLine) return;
+      const data = JSON.parse(dataLine.slice(5));
+      if (data.error) throw new Error(data.error);
+      if (typeof data.text === "string") onDelta?.(data.text);
+      if (data.done) result = data;
+    }
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+        events.forEach(consume);
+        if (done) break;
       }
+      if (buffer.trim()) consume(buffer);
+      if (!result?.response?.trim()) throw new Error("The answer was interrupted. Please try again.");
+      return result;
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
-
-    const responseText = (donePayload?.response || visible || "").trim();
-    if (!responseText) {
-      throw new Error("The server returned an empty response.");
-    }
-    return {
-      response: responseText,
-      suggestions: donePayload?.suggestions || [],
-      conversation_id: donePayload?.conversation_id || conversationId,
-    };
-  } catch (error) {
-    if (error.name === "AbortError") {
-      const abortError = new Error("stopped");
-      abortError.name = "AbortError";
-      throw abortError;
-    }
-    if (error instanceof TypeError) {
-      throw new Error(
-        "Could not reach the Bodh backend. Is it running at the configured API URL?"
-      );
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  });
 }
 
-export async function sendSpeak({ text, languageCode }) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000);
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/speak`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text,
-        language_code: languageCode || null,
-      }),
-      signal: controller.signal,
-    });
-    const payload = await parseJson(response);
-    if (!response.ok) {
-      throw new Error(errorFromPayload(payload, response.status));
-    }
-    if (!payload?.audio_base64) {
-      throw new Error("No spoken audio was returned.");
-    }
-    return payload;
-  } catch (error) {
-    if (error.name === "AbortError") {
-      throw new Error("The voice reply timed out.");
-    }
-    if (error instanceof TypeError) {
-      throw new Error(
-        "Could not reach the Bodh backend. Is it running at the configured API URL?"
-      );
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+export function sendSpeak({ text, languageCode, signal }) {
+  return postJson("/api/speak", { text, language_code: languageCode || null }, signal);
 }
 
-export async function sendTranscription({ audioBlob, filename, conversationId }) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000);
+export function sendTranscription({ audioBlob, filename, conversationId, signal }) {
+  if (audioBlob.size > 8 * 1024 * 1024) throw new Error("Recording is too large. Please record a shorter question.");
   const form = new FormData();
   form.append("conversation_id", conversationId);
-  form.append("file", audioBlob, filename || "audio.webm");
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/transcribe`, {
-      method: "POST",
-      body: form,
-      signal: controller.signal,
-    });
-    const payload = await parseJson(response);
-    if (!response.ok) {
-      throw new Error(errorFromPayload(payload, response.status));
-    }
-    if (!payload?.transcript) {
-      throw new Error("Could not hear a question. Try again.");
-    }
-    return payload;
-  } catch (error) {
-    if (error.name === "AbortError") {
-      throw new Error("The voice request timed out. Try again.");
-    }
-    if (error instanceof TypeError) {
-      throw new Error(
-        "Could not reach the Bodh backend. Is it running at the configured API URL?"
-      );
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-export async function sendVoiceMessage({ audioBlob, filename, conversationId }) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000);
-  const form = new FormData();
-  form.append("conversation_id", conversationId);
-  form.append("file", audioBlob, filename || "audio.webm");
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/voice`, {
-      method: "POST",
-      body: form,
-      signal: controller.signal,
-    });
-    const payload = await parseJson(response);
-    if (!response.ok) {
-      throw new Error(errorFromPayload(payload, response.status));
-    }
-    if (!payload?.response || !payload?.audio_base64) {
-      throw new Error("The server returned an incomplete voice response.");
-    }
-    return payload;
-  } catch (error) {
-    if (error.name === "AbortError") {
-      throw new Error("The voice request timed out. Try again.");
-    }
-    if (error instanceof TypeError) {
-      throw new Error(
-        "Could not reach the Bodh backend. Is it running at the configured API URL?"
-      );
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  form.append("file", audioBlob, filename);
+  return request("/api/transcribe", { method: "POST", body: form, signal }, (response) => response.json());
 }

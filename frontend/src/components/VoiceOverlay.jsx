@@ -80,8 +80,9 @@ export function VoiceTurnStage({
   level = 0,
   reducedMotion = false,
   onSkip,
+  onCancel,
 }) {
-  const label = phase === "hearing" ? "Hearing you" : phase === "speaking" ? "Speaking" : "Thinking";
+  const label = phase === "hearing" ? "Hearing you" : phase === "speaking" ? "Speaking" : phase === "preparing" ? "Preparing voice" : "Thinking";
   return (
     <div className="listen-stage" role="status" aria-live="polite">
       <p className="listen-live">
@@ -95,11 +96,11 @@ export function VoiceTurnStage({
       />
       {question ? <p className="voice-question">{question}</p> : <p className="thinking">Hearing your question…</p>}
       {draft ? <p className="voice-draft">{draft}</p> : phase === "thinking" && question ? <p className="thinking">Thinking…</p> : null}
-      {phase === "speaking" ? (
+      {phase === "speaking" || phase === "preparing" ? (
         <button type="button" className="ghost" onClick={onSkip}>
           Skip to chat
         </button>
-      ) : null}
+      ) : <button type="button" className="ghost" onClick={onCancel}>Stop</button>}
     </div>
   );
 }

@@ -33,6 +33,7 @@ TEXT_SYSTEM_PROMPT = (
     "Each question must have exactly four options on their own lines, labeled A. B. C. D. "
     "Do not reveal the correct answers in that quiz message. "
     "When the user asks you to generate questions that are not a quiz, write a short intro then a numbered list. "
+    "Check factual accuracy and distinguish net force from individual forces. "
     "For ordinary explanations, write short clear paragraphs. Numbered lists are allowed when they help. "
     "Do not use markdown headings, tables, or emoji. "
     "After the full answer, add a machine footer on its own line in this exact shape: "
@@ -101,7 +102,7 @@ def split_spoken_and_suggestions(raw: str) -> tuple[str, list[str]]:
     text = (raw or "").strip()
     match = _SUGGEST_BLOCK.search(text)
     if not match:
-        return text, []
+        return text.split("<<SUGGESTIONS", 1)[0].strip(), []
     spoken = f"{text[: match.start()]} {text[match.end():]}".strip()
     return spoken, _parse_suggestion_items(match.group(1))
 
@@ -135,13 +136,16 @@ def _build_messages(user_message: str, history: list[Any] | None, *, spoken: boo
 
 
 def _visible_text(raw: str) -> str:
+    """Withhold incomplete control markers without stripping word boundaries."""
     cleaned = _THINK_RE.sub("", raw or "")
-    if "<think>" in cleaned:
-        cleaned = cleaned.split("<think>", 1)[0]
-    marker = cleaned.find("<<")
-    if marker >= 0:
-        cleaned = cleaned[:marker]
-    return cleaned.strip()
+    for marker in ("<think>", "<<SUGGESTIONS>>"):
+        if marker in cleaned:
+            cleaned = cleaned.split(marker, 1)[0]
+        for length in range(len(marker) - 1, 0, -1):
+            if cleaned.endswith(marker[:length]):
+                cleaned = cleaned[:-length]
+                break
+    return cleaned
 
 
 def _sse_content_delta(line: str) -> str:
@@ -184,9 +188,8 @@ def stream_chat(
                 headers=_auth_headers(),
             ) as response:
                 if response.status_code >= 400:
-                    detail = response.read().decode("utf-8", errors="replace")[:500]
                     raise LLMError(
-                        f"Sarvam chat error ({response.status_code}): {detail or 'no response body'}",
+                        f"The chat provider could not complete the request ({response.status_code}).",
                         status_code=502,
                     )
                 for line in response.iter_lines():
@@ -197,18 +200,14 @@ def stream_chat(
                         continue
                     raw += piece
                     next_visible = _visible_text(raw)
-                    if next_visible.startswith(visible):
-                        delta = next_visible[len(visible) :]
+                    if next_visible != visible:
                         visible = next_visible
-                        if delta:
-                            yield ("delta", delta, [])
-                    elif next_visible:
-                        visible = next_visible
-                        yield ("delta", next_visible, [])
+                        yield ("delta", visible, [])
+
     except httpx.TimeoutException as exc:
         raise LLMError("The LLM request timed out.", status_code=504) from exc
     except httpx.RequestError as exc:
-        raise LLMError(f"Could not reach Sarvam: {exc}", status_code=502) from exc
+        raise LLMError("Could not reach the chat provider. Please try again.", status_code=502) from exc
 
     spoken_text, suggestions = split_spoken_and_suggestions(_THINK_RE.sub("", raw))
     if not spoken_text:
@@ -235,11 +234,10 @@ def complete_chat(
     except httpx.TimeoutException as exc:
         raise LLMError("The LLM request timed out.", status_code=504) from exc
     except httpx.RequestError as exc:
-        raise LLMError(f"Could not reach Sarvam: {exc}", status_code=502) from exc
+        raise LLMError("Could not reach the chat provider. Please try again.", status_code=502) from exc
 
     if response.status_code >= 400:
-        detail = response.text[:500] if response.text else "no response body"
-        raise LLMError(f"Sarvam chat error ({response.status_code}): {detail}", status_code=502)
+        raise LLMError(f"The chat provider could not complete the request ({response.status_code}).", status_code=502)
 
     try:
         payload = response.json()

@@ -11,7 +11,7 @@ class ChatTurn(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=8000)
     conversation_id: str = Field(..., min_length=1, max_length=128)
-    history: list[ChatTurn] = Field(default_factory=list)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=12)
     spoken: bool = False
 
 
@@ -28,19 +28,10 @@ class TranscribeResponse(BaseModel):
 
 
 class SpeakRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=8000)
+    text: str = Field(..., min_length=1, max_length=2500)
     language_code: str | None = None
 
 
 class SpeakResponse(BaseModel):
     audio_base64: str
     audio_format: str = "wav"
-
-
-class VoiceResponse(BaseModel):
-    transcript: str
-    response: str
-    conversation_id: str
-    audio_base64: str
-    audio_format: str = "wav"
-    suggestions: list[str] = Field(default_factory=list)
